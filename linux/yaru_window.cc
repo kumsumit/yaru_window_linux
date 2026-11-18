@@ -230,23 +230,163 @@ void yaru_window_set_background(GtkWindow* window, guint color) {
   }
 }
 
+static gboolean theme_exists(const gchar* name) {
+  if (name == nullptr || *name == '\0') return FALSE;
+  g_autofree gchar* user_themes = g_build_filename(g_get_home_dir(), ".themes", name, nullptr);
+  if (g_file_test(user_themes, G_FILE_TEST_IS_DIR)) return TRUE;
+  g_autofree gchar* data_themes =
+      g_build_filename(g_get_user_data_dir(), "themes", name, nullptr);
+  if (g_file_test(data_themes, G_FILE_TEST_IS_DIR)) return TRUE;
+  const gchar* const* dirs = g_get_system_data_dirs();
+  for (; dirs != nullptr && *dirs != nullptr; dirs++) {
+    g_autofree gchar* path = g_build_filename(*dirs, "themes", name, nullptr);
+    if (g_file_test(path, G_FILE_TEST_IS_DIR)) return TRUE;
+  }
+  return FALSE;
+}
+
+// Returns the name without a trailing "-dark" / "-Dark" (any case), or null if
+// the theme name does not end with one.
+static gchar* strip_dark_suffix(const gchar* name) {
+  gsize len = strlen(name);
+  if (len > 5 && g_ascii_strcasecmp(name + len - 5, "-dark") == 0) {
+    return g_strndup(name, len - 5);
+  }
+  return nullptr;
+}
+
 void yaru_window_set_brightness(GtkWindow* window, const gchar* brightness) {
   gboolean dark = g_strcmp0(brightness, "dark") == 0;
 
   GtkSettings* settings = gtk_settings_get_default();
   g_object_set(settings, "gtk-application-prefer-dark-theme", dark, nullptr);
 
-  if (!dark) {
-    // `gtk-application-prefer-dark-theme=false` is not enough to switch to
-    // the light mode if the current theme is a dark variant such as
-    // "Yaru-dark" or "Adwaita-dark". try switching to the light variant
-    // without a "-dark" suffix.
-    g_autofree gchar* theme_name = nullptr;
-    g_object_get(settings, "gtk-theme-name", &theme_name, nullptr);
-    if (g_str_has_suffix(theme_name, "-dark")) {
-      g_autofree gchar* light_theme_name =
-          g_strndup(theme_name, strlen(theme_name) - 5);
-      g_object_set(settings, "gtk-theme-name", light_theme_name, nullptr);
+  // `gtk-application-prefer-dark-theme` only affects themes that ship a dark
+  // variant of their own (such as Adwaita or Yaru). For other themes, e.g.
+  // "Breeze" and "Breeze-Dark", switch between the separate themes.
+  g_autofree gchar* theme_name = nullptr;
+  g_object_get(settings, "gtk-theme-name", &theme_name, nullptr);
+  if (theme_name == nullptr) {
+    return;
+  }
+
+  // Remember the theme the application started with, so that light mode
+  // restores it exactly.
+  if (g_object_get_data(G_OBJECT(settings), "yaru_original_theme") == nullptr) {
+    gchar* original = strip_dark_suffix(theme_name);
+    g_object_set_data_full(G_OBJECT(settings), "yaru_original_theme",
+                           original != nullptr ? original
+                                               : g_strdup(theme_name),
+                           g_free);
+  }
+  const gchar* base = static_cast<const gchar*>(
+      g_object_get_data(G_OBJECT(settings), "yaru_original_theme"));
+
+  g_autofree gchar* target = nullptr;
+  if (dark) {
+    const gchar* suffixes[] = {"-dark", "-Dark", nullptr};
+    for (int i = 0; suffixes[i] != nullptr && target == nullptr; i++) {
+      g_autofree gchar* candidate = g_strconcat(base, suffixes[i], nullptr);
+      if (theme_exists(candidate)) {
+        target = g_steal_pointer(&candidate);
+      }
     }
+  } else {
+    target = g_strdup(base);
+  }
+  if (target != nullptr && g_strcmp0(target, theme_name) != 0) {
+    g_object_set(settings, "gtk-theme-name", target, nullptr);
+  }
+}
+
+void yaru_window_set_control_buttons_visible(GtkWindow* window,
+                                             gboolean visible) {
+  GtkWidget* titlebar = find_header_bar(window);
+  if (titlebar != nullptr) {
+    g_object_set(titlebar, "show-close-button", visible, nullptr);
+  }
+}
+
+// Applies the stored minimum and maximum size as geometry hints. A size of
+// zero (or less) in either dimension means "no limit".
+static void apply_size_hints(GtkWindow* window) {
+  gint min_w = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(window), "min_w"));
+  gint min_h = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(window), "min_h"));
+  gint max_w = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(window), "max_w"));
+  gint max_h = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(window), "max_h"));
+
+  GdkGeometry geometry = {};
+  gint mask = 0;
+  if (min_w > 0 || min_h > 0) {
+    geometry.min_width = min_w > 0 ? min_w : 0;
+    geometry.min_height = min_h > 0 ? min_h : 0;
+    mask |= GDK_HINT_MIN_SIZE;
+  }
+  if (max_w > 0 || max_h > 0) {
+    geometry.max_width = max_w > 0 ? max_w : G_MAXINT;
+    geometry.max_height = max_h > 0 ? max_h : G_MAXINT;
+    mask |= GDK_HINT_MAX_SIZE;
+  }
+  gtk_window_set_geometry_hints(window, nullptr, &geometry,
+                                static_cast<GdkWindowHints>(mask));
+}
+
+void yaru_window_set_minimum_size(GtkWindow* window, gint width, gint height) {
+  g_object_set_data(G_OBJECT(window), "min_w", GINT_TO_POINTER(width));
+  g_object_set_data(G_OBJECT(window), "min_h", GINT_TO_POINTER(height));
+  apply_size_hints(window);
+}
+
+void yaru_window_set_maximum_size(GtkWindow* window, gint width, gint height) {
+  g_object_set_data(G_OBJECT(window), "max_w", GINT_TO_POINTER(width));
+  g_object_set_data(G_OBJECT(window), "max_h", GINT_TO_POINTER(height));
+  apply_size_hints(window);
+}
+
+void yaru_window_center(GtkWindow* window) {
+  GdkWindow* handle = gtk_widget_get_window(GTK_WIDGET(window));
+  if (handle == nullptr) {
+    gtk_window_set_position(window, GTK_WIN_POS_CENTER);
+    return;
+  }
+  GdkDisplay* display = gdk_window_get_display(handle);
+  GdkMonitor* monitor = gdk_display_get_monitor_at_window(display, handle);
+  GdkRectangle area;
+  gdk_monitor_get_workarea(monitor, &area);
+
+  gint width, height;
+  gtk_window_get_size(window, &width, &height);
+  gtk_window_move(window, area.x + (area.width - width) / 2,
+                  area.y + (area.height - height) / 2);
+}
+
+// A window that was hidden comes back with an empty (black) Flutter surface
+// on Wayland. Changing the size by a pixel and back makes the surface commit
+// a fresh frame.
+static gboolean restore_size_cb(gpointer user_data) {
+  GtkWindow* window = GTK_WINDOW(user_data);
+  gint width = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(window), "nudge_w"));
+  gint height = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(window), "nudge_h"));
+  gtk_window_resize(window, width, height);
+  return G_SOURCE_REMOVE;
+}
+
+static gboolean nudge_size_cb(gpointer user_data) {
+  GtkWindow* window = GTK_WINDOW(user_data);
+  gint width, height;
+  gtk_window_get_size(window, &width, &height);
+  g_object_set_data(G_OBJECT(window), "nudge_w", GINT_TO_POINTER(width));
+  g_object_set_data(G_OBJECT(window), "nudge_h", GINT_TO_POINTER(height));
+  gtk_window_resize(window, width + 1, height);
+  g_timeout_add(50, restore_size_cb, window);
+  return G_SOURCE_REMOVE;
+}
+
+void yaru_window_refresh_surface(GtkWindow* window) {
+  gtk_window_present(window);
+  if (!gtk_window_is_maximized(window) &&
+      !(gdk_window_get_state(gtk_widget_get_window(GTK_WIDGET(window))) &
+        GDK_WINDOW_STATE_FULLSCREEN)) {
+    g_timeout_add(100, nudge_size_cb, window);
   }
 }

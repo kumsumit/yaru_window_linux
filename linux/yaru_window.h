@@ -18,6 +18,12 @@ void yaru_window_restore(GtkWindow* window);
 void yaru_window_show_menu(GtkWindow* window);
 void yaru_window_set_background(GtkWindow* window, guint color);
 void yaru_window_set_brightness(GtkWindow* window, const gchar* brightness);
+void yaru_window_set_control_buttons_visible(GtkWindow* window,
+                                             gboolean visible);
+void yaru_window_set_minimum_size(GtkWindow* window, gint width, gint height);
+void yaru_window_set_maximum_size(GtkWindow* window, gint width, gint height);
+void yaru_window_center(GtkWindow* window);
+void yaru_window_refresh_surface(GtkWindow* window);
 
 G_END_DECLS
 

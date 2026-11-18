@@ -113,6 +113,7 @@ static void yaru_window_linux_plugin_handle_method_call(
     yaru_window_restore(window);
   } else if (strcmp(method, "show") == 0) {
     gtk_widget_show(GTK_WIDGET(window));
+    yaru_window_refresh_surface(window);
   } else if (strcmp(method, "showMenu") == 0) {
     yaru_window_show_menu(window);
   } else if (strcmp(method, "state") == 0) {
@@ -138,6 +139,35 @@ static void yaru_window_linux_plugin_handle_method_call(
   } else if (strcmp(method, "setTitle") == 0) {
     FlValue* title = fl_value_get_list_value(args, 1);
     yaru_window_set_title(window, fl_value_get_string(title));
+  } else if (strcmp(method, "setControlButtonsVisible") == 0) {
+    FlValue* visible = fl_value_get_list_value(args, 1);
+    yaru_window_set_control_buttons_visible(window, fl_value_get_bool(visible));
+  } else if (strcmp(method, "setResizable") == 0) {
+    FlValue* resizable = fl_value_get_list_value(args, 1);
+    gtk_window_set_resizable(window, fl_value_get_bool(resizable));
+  } else if (strcmp(method, "setMinimumSize") == 0) {
+    yaru_window_set_minimum_size(
+        window, fl_value_get_float(fl_value_get_list_value(args, 1)),
+        fl_value_get_float(fl_value_get_list_value(args, 2)));
+  } else if (strcmp(method, "setMaximumSize") == 0) {
+    yaru_window_set_maximum_size(
+        window, fl_value_get_float(fl_value_get_list_value(args, 1)),
+        fl_value_get_float(fl_value_get_list_value(args, 2)));
+  } else if (strcmp(method, "setSize") == 0) {
+    gtk_window_resize(window,
+                      fl_value_get_float(fl_value_get_list_value(args, 1)),
+                      fl_value_get_float(fl_value_get_list_value(args, 2)));
+  } else if (strcmp(method, "setPosition") == 0) {
+    gtk_window_move(window, fl_value_get_float(fl_value_get_list_value(args, 1)),
+                    fl_value_get_float(fl_value_get_list_value(args, 2)));
+  } else if (strcmp(method, "center") == 0) {
+    yaru_window_center(window);
+  } else if (strcmp(method, "setAlwaysOnTop") == 0) {
+    FlValue* on_top = fl_value_get_list_value(args, 1);
+    gtk_window_set_keep_above(window, fl_value_get_bool(on_top));
+  } else if (strcmp(method, "setSkipTaskbar") == 0) {
+    FlValue* skip = fl_value_get_list_value(args, 1);
+    gtk_window_set_skip_taskbar_hint(window, fl_value_get_bool(skip));
   } else {
     response = FL_METHOD_RESPONSE(fl_method_not_implemented_response_new());
   }
