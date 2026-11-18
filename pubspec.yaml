@@ -1,0 +1,28 @@
+name: yaru_window_linux
+description: A Linux implementation of yaru_window.
+repository: https://github.com/ubuntu/yaru_window.dart
+issue_tracker: https://github.com/ubuntu/yaru_window.dart/issues
+version: 0.2.2
+publish_to: none
+
+environment:
+  sdk: ">=3.14.0 <4.0.0"
+  flutter: ">=3.50.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  plugin_platform_interface: 
+    git: https://github.com/kumsumit/plugin_platform_interface.git
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  ubuntu_lints: ^0.4.2
+
+flutter:
+  plugin:
+    implements: yaru_window
+    platforms:
+      linux:
+        pluginClass: YaruWindowLinuxPlugin
